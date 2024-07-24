@@ -69,6 +69,8 @@ def main():
     parser = argparse.ArgumentParser(description='PyTorch FixMatch Training')
     parser.add_argument('--freematch', action="store_true",
                         help='Freematch implementation using cs7643')
+    parser.add_argument('--ema', default=0.9, type=float,
+                        help='lambda used for global/local threshold ema')
     parser.add_argument('--gpu-id', default='0', type=int,
                         help='id(s) for CUDA_VISIBLE_DEVICES')
     parser.add_argument('--num-workers', type=int, default=4,
@@ -316,6 +318,12 @@ def train(args, labeled_trainloader, unlabeled_trainloader, test_loader,
     labeled_iter = iter(labeled_trainloader)
     unlabeled_iter = iter(unlabeled_trainloader)
 
+    # Initialize global and local threshold objects for freematch implementation
+    # Uses 1 / num_classes as initial value (t=0)
+    if args.freematch:
+        global_threshold = torch.tensor([1 / args.num_classes]).to(args.device)
+        local_threshold = torch.tensor([1 / args.num_classes] * 10).to(args.device)
+
     model.train()
     for epoch in range(args.start_epoch, args.epochs):
         batch_time = AverageMeter()
@@ -369,6 +377,16 @@ def train(args, labeled_trainloader, unlabeled_trainloader, test_loader,
 
             pseudo_label = torch.softmax(logits_u_w.detach()/args.T, dim=-1)
             max_probs, targets_u = torch.max(pseudo_label, dim=-1)
+            if args.freematch:
+                # logger.info(f"\nPseudo_label shape : {pseudo_label.shape}")
+                # logger.info(f"\nPseudo_label : {pseudo_label}")
+                # global_threshold = global_threshold * 0.999 + (1 - 0.999) * torch.mean(max_probs)
+                global_threshold = args.ema * global_threshold + (1 - args.ema) * torch.mean(max_probs)
+                local_threshold = args.ema * local_threshold + (1 - args.ema) * torch.mean(pseudo_label, dim=0)
+                self_adaptive_threshold = local_threshold / torch.max(local_threshold) * global_threshold
+                logger.info(f"\nGlobal Threshold Update : {global_threshold}")
+                logger.info(f"\nLocal Threshold Update : {local_threshold}")
+                logger.info(f"\nAdaptive Threshold Update : {self_adaptive_threshold}")
             mask = max_probs.ge(args.threshold).float()
 
             Lu = (F.cross_entropy(logits_u_s, targets_u,
