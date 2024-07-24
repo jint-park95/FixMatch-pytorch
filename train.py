@@ -67,6 +67,8 @@ def de_interleave(x, size):
 
 def main():
     parser = argparse.ArgumentParser(description='PyTorch FixMatch Training')
+    parser.add_argument('--freematch', action="store_true",
+                        help='Freematch implementation using cs7643')
     parser.add_argument('--gpu-id', default='0', type=int,
                         help='id(s) for CUDA_VISIBLE_DEVICES')
     parser.add_argument('--num-workers', type=int, default=4,
